@@ -18,9 +18,13 @@ from components.reranker import *
 from components.standalone_parser import StandaloneParser
 from model import nn_utils
 from model.paraphrase import ParaphraseIdentificationModel
-from model.parser import Parser
+# from model.parser import Parser
+from model.wikisql.parser import Parser
 from model.reconstruction_model import Reconstructor
 from model.utils import GloveHelper
+# from torchviz import make_dot, make_dot_from_trace
+from torchsummary import summary
+from torch.utils.tensorboard import SummaryWriter
 
 assert astor.__version__ == "0.7.1"
 if six.PY3:
@@ -61,6 +65,13 @@ def train(args):
         model = parser_cls.load(model_path=args.pretrain, cuda=args.cuda)
     else:
         model = parser_cls(args, vocab, transition_system)
+    
+    print(model.parameters)
+    
+    # try visualisation
+    # make_dot(model(train_set), params=dict(model.named_parameters())).render("model", format="png")
+    # writer = SummaryWriter('tranx_tb')
+    # writer.add_graph(model)
 
     model.train()
     evaluator = Registrable.by_name(args.evaluator)(transition_system, args=args)

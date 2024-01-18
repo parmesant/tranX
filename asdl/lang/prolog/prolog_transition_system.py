@@ -6,7 +6,7 @@ try:
 except:
     from io import StringIO
 
-from collections import Iterable
+
 from asdl.asdl import *
 from asdl.asdl_ast import RealizedField, AbstractSyntaxTree
 

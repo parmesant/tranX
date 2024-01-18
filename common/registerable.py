@@ -10,7 +10,7 @@ class Registrable(object):
         def register_class(cls):
             if name in Registrable.registered_components:
                 raise RuntimeError('class %s already registered' % name)
-
+            # print(f"registering {name=}")
             Registrable.registered_components[name] = cls
             return cls
 
@@ -18,4 +18,5 @@ class Registrable(object):
 
     @staticmethod
     def by_name(name):
+        # print(f"calling by {name=}")
         return Registrable.registered_components[name]

@@ -290,6 +290,7 @@ class Parser(nn.Module):
                           primitive_predictor[:, :, 1] * tgt_primitive_copy_prob * batch.primitive_copy_mask
 
             # avoid nan in log
+            action_mask_pad = action_mask_pad.bool()
             action_prob.data.masked_fill_(action_mask_pad.data, 1.e-7)
 
             action_prob = action_prob.log() * action_mask
