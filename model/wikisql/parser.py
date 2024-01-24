@@ -235,7 +235,7 @@ class WikiSqlParser(Parser):
                     else:
                         raise ValueError('unknown action %s' % action_t)
 
-                    action_probs[e_id].append(act_prob_t_i)
+                    action_probs[e_id].append(act_prob_t_i.resize(1))
 
             history_states.append((h_t, cell_t))
             att_vecs.append(att_t)
@@ -244,7 +244,7 @@ class WikiSqlParser(Parser):
             att_tm1 = att_t
 
         # sum all the action probabilities
-        action_prob_var = torch.cat([torch.cat(action_probs_i).log().sum() for action_probs_i in action_probs])
+        action_prob_var = torch.cat([torch.cat(action_probs_i).log().sum().resize(1) for action_probs_i in action_probs])
 
         return [action_prob_var]   # TODO: supervised attention not implemented yet!
 
