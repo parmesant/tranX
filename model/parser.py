@@ -47,19 +47,43 @@ class Parser(nn.Module):
 
         # source token embedding
         self.src_embed = nn.Embedding(len(vocab.source), args.embed_size)
+        # vocab is of length 14838
 
         # embedding table of ASDL production rules (constructors), one for each ApplyConstructor action,
         # the last entry is the embedding for Reduce action
         self.production_embed = nn.Embedding(len(transition_system.grammar) + 1, args.action_embed_size)
+        # production_embed is the production rules for the grammar
+        # e.g.
+        # stmt -> Select(agg_op? agg, column_idx col_idx, cond_expr* conditions)
+        # cond_expr -> Condition(cmp_op op, column_idx col_idx, string value)
+        # agg_op -> Max()
+        # cmp_op -> Other()
+        # there are 11 rules in wikiSQL grammar
 
         # embedding table for target primitive tokens
         self.primitive_embed = nn.Embedding(len(vocab.primitive), args.action_embed_size)
+        # {0: '<pad>', 1: '<s>', 2: '</s>', 3: '<unk>', 4: '</primitive>'}
+        # there are 5 primitive tokens in wikiSQL grammar
 
         # embedding table for ASDL fields in constructors
         self.field_embed = nn.Embedding(len(transition_system.grammar.fields), args.field_embed_size)
+        # for wikiSQL
+        # Field(agg_op? agg),
+        # Field(column_idx col_idx),
+        # Field(cond_expr* conditions),
+        # Field(cmp_op op),
+        # Field(string value)
+
 
         # embedding table for ASDL types
         self.type_embed = nn.Embedding(len(transition_system.grammar.types), args.type_embed_size)
+        # ASDLCompositeType(agg_op),
+        # ASDLCompositeType(cmp_op),
+        # ASDLPrimitiveType(column_idx),
+        # ASDLCompositeType(cond_expr),
+        # ASDLCompositeType(stmt),
+        # ASDLPrimitiveType(string)
+
 
         nn.init.xavier_normal_(self.src_embed.weight.data)
         nn.init.xavier_normal_(self.production_embed.weight.data)

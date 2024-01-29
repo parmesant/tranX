@@ -99,6 +99,7 @@ class WikiSqlParser(Parser):
         input: a batch of examples
         output: score for each training example: Variable(batch_size)
         """
+        breakpoint()
         args = self.args
         batch = WikiSqlBatch(examples, self.grammar, self.vocab, cuda=self.args.cuda)
 
@@ -236,7 +237,7 @@ class WikiSqlParser(Parser):
                         raise ValueError('unknown action %s' % action_t)
 
                     action_probs[e_id].append(act_prob_t_i.resize(1))
-
+            # breakpoint()
             history_states.append((h_t, cell_t))
             att_vecs.append(att_t)
 
