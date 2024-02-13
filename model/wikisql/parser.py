@@ -404,6 +404,7 @@ class WikiSqlParser(Parser):
                         new_hyp_meta.append(meta_entry)
                     elif action_type == WikiSqlSelectColumnAction:
                         for col_id, column in enumerate(table.header):
+                            print(f"{t=}, {hyp_id=}")
                             col_sel_score = column_selection_log_prob[hyp_id, col_id]
                             new_hyp_score = hyp.score + col_sel_score
 

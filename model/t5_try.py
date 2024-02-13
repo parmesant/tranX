@@ -101,7 +101,7 @@ class CustomT5(nn.Module):
         labels = [getLabels(e,prod_rules) for e in examples]
 
     def parse(self, example, table, beam_size):
-        breakpoint()
+        # breakpoint()
         production_len = 12
         primitive_len = 5
         field_len = 5
@@ -109,7 +109,7 @@ class CustomT5(nn.Module):
         src_len = 14838
         question = ' '.join(example.src_sent)
         table = example.table
-        input_sentence = "translate English to SQL: " + question + " table header: " + table
+        input_sentence = "translate English to SQL: " + question
         input_ids = self.tokenizer(input_sentence, return_tensors="pt", padding=True, truncation=True, max_length=512).input_ids
         utterance_encodings = self.encoder(input_ids=input_ids) # shape = (batch ,sentence length, 768)
 
@@ -117,10 +117,12 @@ class CustomT5(nn.Module):
         hypotheses = [DecodeHypothesis()]
         hyp_states = [[]]
         completed_hypotheses = []
+        column_selection_log_prob_list = []
 
         with torch.no_grad():
             while len(completed_hypotheses) < beam_size and t < self.args.decode_max_time_step:
                 hyp_num = len(hypotheses)
+                print(f"{hyp_num=},{question=},{t=}")
 
                 if t==0:
                     pass
@@ -131,9 +133,17 @@ class CustomT5(nn.Module):
                 # pass utterance encoding to decoder
                 apply_rule_log_prob = F.log_softmax(self.head(utterance_encodings[0][:,:,:].view(-1,768)), dim=-1)[:,:production_len].mean(dim=0, keepdim=True)
                 
-                primitive_predictor_prob = F.softmax(self.head(utterance_encodings[0][:,:,:].view(-1,768)), dim=-1)[:,production_len:production_len+primitive_len].mean(dim=0, keepdim=True)
+                primitive_gen_from_vocab_prob = F.softmax(self.head(utterance_encodings[0][:,:,:].view(-1,768)), dim=-1)[:,production_len:production_len+primitive_len].mean(dim=0, keepdim=True)
 
                 column_selection_log_prob = F.log_softmax(self.head(utterance_encodings[0][:,:,:].view(-1,768)), dim=-1)[:,-src_len:].mean(dim=0, keepdim=True)
+                column_selection_log_prob_list.append(column_selection_log_prob)
+
+                # # this is a yes/no probablity # (batch_size, 2)
+                # primitive_predictor_prob
+
+                # # primitive copy prob
+                # # (batch_size, src_token_num)
+                # primitive_copy_prob
 
                 new_hyp_meta = []
                 
@@ -164,8 +174,10 @@ class CustomT5(nn.Module):
 
                         # what to do about this???
                         elif action_type == WikiSqlSelectColumnAction:
+                            # breakpoint()
+                            print(f"{hyp_id=},{len(column_selection_log_prob_list)=},{len(table.header)=}")
                             for col_id, column in enumerate(table.header):
-                                col_sel_score = column_selection_log_prob[hyp_id, col_id]
+                                col_sel_score = column_selection_log_prob_list[hyp_id][0,col_id]
                                 new_hyp_score = hyp.score + col_sel_score
 
                                 meta_entry = {'action_type': 'sel_col', 'col_id': col_id,
@@ -194,22 +206,23 @@ class CustomT5(nn.Module):
                                                         if any(c.isdigit() for c in question[i]) or
                                                         hyp._value_buffer and question[i] in (',', '.', '-', '%')]
 
-                            p_copies = primitive_predictor_prob[hyp_id, 1]# * primitive_copy_prob[hyp_id]
+                            # p_copies = primitive_predictor_prob[hyp_id, 1] * primitive_copy_prob[hyp_id] # this is a yes/no probablity
                             for token_pos in valid_token_pos_list:
                                 token = question[token_pos]
-                                p_copy = p_copies[token_pos]
-                                score_copy = torch.log(p_copy)
+                                # p_copy = p_copies[token_pos]
+                                # score_copy = torch.log(p_copy)
 
                                 meta_entry = {'action_type': 'gen_token',
                                             'token': token, 'token_pos': token_pos,
-                                            'score': score_copy, 'new_hyp_score': score_copy + hyp.score,
+                                            'score': hyp.score,#score_copy, 
+                                            'new_hyp_score': hyp.score ,#+ score_copy,
                                             'prev_hyp_id': hyp_id}
                                 new_hyp_meta.append(meta_entry)
 
                             # add generation probability for </primitive>
                             if hyp._value_buffer:
-                                eos_prob = primitive_predictor_prob[hyp_id, 0] * \
-                                        primitive_gen_from_vocab_prob[hyp_id, self.vocab.primitive['</primitive>']]
+                                eos_prob = primitive_gen_from_vocab_prob[hyp_id, self.vocab.primitive['</primitive>']]#*primitive_predictor_prob[hyp_id, 0]
+                                        
                                 eos_score = torch.log(eos_prob)
 
                                 meta_entry = {'action_type': 'gen_token',
@@ -267,13 +280,14 @@ class CustomT5(nn.Module):
                     else:
                         new_hypotheses.append(new_hyp)
                         live_hyp_ids.append(prev_hyp_id)
+                        print(f"{question=},{len(new_hypotheses)=}")
 
                 # what to do about this???
                 if live_hyp_ids:
                     # hyp_states = [hyp_states[i] + [(h_t[i], cell_t[i])] for i in live_hyp_ids]
                     # h_tm1 = (h_t[live_hyp_ids], cell_t[live_hyp_ids])
                     # att_tm1 = att_t[live_hyp_ids]
-                    # hypotheses = new_hypotheses
+                    hypotheses = new_hypotheses
                     t += 1
                 else: break
             
