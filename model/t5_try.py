@@ -56,22 +56,23 @@ class CustomT5(nn.Module):
         self.vocab = vocab
         self.grammar = self.transition_system.grammar
 
+        self.hidden_size = 256
+        self.max_sent_len = 100
+
         self.tokenizer = T5Tokenizer.from_pretrained("t5-base")
         # self.t5 = T5ForConditionalGeneration.from_pretrained("t5-base")
         # self.t5 = T5Model.from_pretrained("t5-base")
         self.encoder = T5EncoderModel.from_pretrained("t5-base")
+
         self.dropout = nn.Dropout(0.1)
         self.head = nn.Linear(768, head_size)
 
         # in case of multiple output labels, use sigmoid
 
-    def forward(self, prod_rules, input_ids=None, attention_mask=None, labels=None) -> None:
+    def forward(self, input_ids=None, attention_mask=None, labels=None) -> None:
         
-        # get outputs from T5
-        outputs = self.encoder(input_ids=input_ids)
-        
-        #Add custom layers
-        sequence_output = self.dropout(outputs[0]) #outputs[0]=last hidden state
+        # # Add custom layers
+        # sequence_output = self.dropout(outputs[0]) #outputs[0]=last hidden state
         
         # # pass the outputs through the head
         # logits = self.head(sequence_output[:,0,:].view(-1,768)) # calculate losses
@@ -92,6 +93,30 @@ class CustomT5(nn.Module):
         #     # encoder_hidden_states=outputs.encoder_hidden_states,
         #     # encoder_attentions=outputs.encoder_attentions,
         # )
+
+        # PointerNet accepts 3 params during training and 2 during scoring
+        # training-
+        # scoring-
+        # utterance_encoding (batch_size, src_sent_len, hidden_size)
+        # att_t (batch_size, hidden_size)
+        # so we decide an arbitrary src_sent_len and fill the sentences with <pad>
+        pass
+
+    
+    def getUtteranceEncoding(self, input_ids=None):
+        # we want to convert
+        # (1,768) -> (max_sent_len, hidden_size)
+        
+        # get outputs from T5
+        outputs = self.encoder(input_ids=input_ids)
+
+        outputs = torch.matmul(outputs,nn.Linear(768,self.hidden_size))
+        # outputs = (1, hidden_size)
+
+        outputs = torch.matmul(torch.transpose(outputs),nn.Linear(1,self.max_sent_len+1)).T
+        # outputs = (max_sent_len+1, hidden_size)
+        return outputs
+        
     
     def score(self, examples, prod_rules, tokenizer, device):
         batch_examples_modified = [tokenize(e,prod_rules) for e in examples]
@@ -111,7 +136,11 @@ class CustomT5(nn.Module):
         table = example.table
         input_sentence = "translate English to SQL: " + question
         input_ids = self.tokenizer(input_sentence, return_tensors="pt", padding=True, truncation=True, max_length=512).input_ids
-        utterance_encodings = self.encoder(input_ids=input_ids) # shape = (batch ,sentence length, 768)
+        # utterance_encodings = self.encoder(input_ids=input_ids) # shape = (batch ,sentence length, 768)
+        encodings = self.getUtteranceEncoding(input_ids)
+        utterance_encodings = encodings[:-1]
+        att_t = encodings[-1]
+
 
         t = 0
         hypotheses = [DecodeHypothesis()]
