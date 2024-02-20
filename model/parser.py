@@ -26,6 +26,9 @@ from model.attention_util import AttentionUtil
 from model.nn_utils import LabelSmoothing
 from model.pointer_net import PointerNet
 
+device = torch.device(f'cuda:{torch.cuda.current_device()}') if torch.cuda.is_available() else 'cpu'
+# device = 'cpu'
+# torch.set_default_device(device)
 
 @Registrable.register('default_parser')
 class Parser(nn.Module):
@@ -46,12 +49,12 @@ class Parser(nn.Module):
         # Embedding layers
 
         # source token embedding
-        self.src_embed = nn.Embedding(len(vocab.source), args.embed_size)
+        self.src_embed = nn.Embedding(len(vocab.source), args.embed_size).to(device)
         # vocab is of length 14838
 
         # embedding table of ASDL production rules (constructors), one for each ApplyConstructor action,
         # the last entry is the embedding for Reduce action
-        self.production_embed = nn.Embedding(len(transition_system.grammar) + 1, args.action_embed_size)
+        self.production_embed = nn.Embedding(len(transition_system.grammar) + 1, args.action_embed_size).to(device)
         # production_embed is the production rules for the grammar
         # e.g.
         # stmt -> Select(agg_op? agg, column_idx col_idx, cond_expr* conditions)
@@ -61,12 +64,12 @@ class Parser(nn.Module):
         # there are 11 rules in wikiSQL grammar
 
         # embedding table for target primitive tokens
-        self.primitive_embed = nn.Embedding(len(vocab.primitive), args.action_embed_size)
+        self.primitive_embed = nn.Embedding(len(vocab.primitive), args.action_embed_size).to(device)
         # {0: '<pad>', 1: '<s>', 2: '</s>', 3: '<unk>', 4: '</primitive>'}
         # there are 5 primitive tokens in wikiSQL grammar
 
         # embedding table for ASDL fields in constructors
-        self.field_embed = nn.Embedding(len(transition_system.grammar.fields), args.field_embed_size)
+        self.field_embed = nn.Embedding(len(transition_system.grammar.fields), args.field_embed_size).to(device)
         # for wikiSQL
         # Field(agg_op? agg),
         # Field(column_idx col_idx),
@@ -76,7 +79,7 @@ class Parser(nn.Module):
 
 
         # embedding table for ASDL types
-        self.type_embed = nn.Embedding(len(transition_system.grammar.types), args.type_embed_size)
+        self.type_embed = nn.Embedding(len(transition_system.grammar.types), args.type_embed_size).to(device)
         # ASDLCompositeType(agg_op),
         # ASDLCompositeType(cmp_op),
         # ASDLPrimitiveType(column_idx),
@@ -93,7 +96,7 @@ class Parser(nn.Module):
 
         # LSTMs
         if args.lstm == 'lstm':
-            self.encoder_lstm = nn.LSTM(args.embed_size, int(args.hidden_size / 2), bidirectional=True)
+            self.encoder_lstm = nn.LSTM(args.embed_size, int(args.hidden_size / 2), bidirectional=True).to(device)
 
             input_dim = args.action_embed_size  # previous action
             # frontier info
@@ -104,9 +107,9 @@ class Parser(nn.Module):
 
             input_dim += args.att_vec_size * (not args.no_input_feed)  # input feeding
 
-            self.decoder_lstm = nn.LSTMCell(input_dim, args.hidden_size)
+            self.decoder_lstm = nn.LSTMCell(input_dim, args.hidden_size).to(device)
         elif args.lstm == 'parent_feed':
-            self.encoder_lstm = nn.LSTM(args.embed_size, int(args.hidden_size / 2), bidirectional=True)
+            self.encoder_lstm = nn.LSTM(args.embed_size, int(args.hidden_size / 2), bidirectional=True).to(device)
             from .lstm import ParentFeedingLSTMCell
 
             input_dim = args.action_embed_size  # previous action
@@ -116,38 +119,38 @@ class Parser(nn.Module):
             input_dim += args.type_embed_size * (not args.no_parent_field_type_embed)
             input_dim += args.att_vec_size * (not args.no_input_feed)  # input feeding
 
-            self.decoder_lstm = ParentFeedingLSTMCell(input_dim, args.hidden_size)
+            self.decoder_lstm = ParentFeedingLSTMCell(input_dim, args.hidden_size).to(device)
         else:
             raise ValueError('Unknown LSTM type %s' % args.lstm)
 
         if args.no_copy is False:
             # pointer net for copying tokens from source side
-            self.src_pointer_net = PointerNet(query_vec_size=args.att_vec_size, src_encoding_size=args.hidden_size)
+            self.src_pointer_net = PointerNet(query_vec_size=args.att_vec_size, src_encoding_size=args.hidden_size).to(device)
 
             # given the decoder's hidden state, predict whether to copy or generate a target primitive token
             # output: [p(gen(token)) | s_t, p(copy(token)) | s_t]
 
-            self.primitive_predictor = nn.Linear(args.att_vec_size, 2)
+            self.primitive_predictor = nn.Linear(args.att_vec_size, 2).to(device)
 
         if args.primitive_token_label_smoothing:
             self.label_smoothing = LabelSmoothing(args.primitive_token_label_smoothing, len(self.vocab.primitive), ignore_indices=[0, 1, 2])
 
         # initialize the decoder's state and cells with encoder hidden states
-        self.decoder_cell_init = nn.Linear(args.hidden_size, args.hidden_size)
+        self.decoder_cell_init = nn.Linear(args.hidden_size, args.hidden_size).to(device)
 
         # attention: dot product attention
         # project source encoding to decoder rnn's hidden space
 
-        self.att_src_linear = nn.Linear(args.hidden_size, args.hidden_size, bias=False)
+        self.att_src_linear = nn.Linear(args.hidden_size, args.hidden_size, bias=False).to(device)
 
         # transformation of decoder hidden states and context vectors before reading out target words
         # this produces the `attentional vector` in (Luong et al., 2015)
 
-        self.att_vec_linear = nn.Linear(args.hidden_size + args.hidden_size, args.att_vec_size, bias=False)
+        self.att_vec_linear = nn.Linear(args.hidden_size + args.hidden_size, args.att_vec_size, bias=False).to(device)
 
         # bias for predicting ApplyConstructor and GenToken actions
-        self.production_readout_b = nn.Parameter(torch.FloatTensor(len(transition_system.grammar) + 1).zero_())
-        self.tgt_token_readout_b = nn.Parameter(torch.FloatTensor(len(vocab.primitive)).zero_())
+        self.production_readout_b = nn.Parameter(torch.FloatTensor(len(transition_system.grammar) + 1).zero_()).to(device)
+        self.tgt_token_readout_b = nn.Parameter(torch.FloatTensor(len(vocab.primitive)).zero_()).to(device)
 
         if args.no_query_vec_to_action_map:
             # if there is no additional linear layer between the attentional vector (i.e., the query vector)
@@ -168,9 +171,13 @@ class Parser(nn.Module):
                 self.query_vec_to_primitive_embed = nn.Linear(args.att_vec_size, args.embed_size, bias=args.readout == 'non_linear')
             else:
                 self.query_vec_to_primitive_embed = self.query_vec_to_action_embed
+                self.query_vec_to_primitive_embed.to(device)
 
             self.read_out_act = torch.tanh if args.readout == 'non_linear' else nn_utils.identity
 
+            self.production_embed.to(device)
+            self.primitive_embed.to(device)
+            self.production_readout_b.to(device)
             self.production_readout = lambda q: F.linear(self.read_out_act(self.query_vec_to_action_embed(q)),
                                                          self.production_embed.weight, self.production_readout_b)
             self.tgt_token_readout = lambda q: F.linear(self.read_out_act(self.query_vec_to_primitive_embed(q)),
@@ -223,7 +230,7 @@ class Parser(nn.Module):
     def init_decoder_state(self, enc_last_state, enc_last_cell):
         """Compute the initial decoder hidden state and cell state"""
 
-        h_0 = self.decoder_cell_init(enc_last_cell)
+        h_0 = self.decoder_cell_init(enc_last_cell).to(device)
         h_0 = torch.tanh(h_0)
 
         return h_0, Variable(self.new_tensor(h_0.size()).zero_())
